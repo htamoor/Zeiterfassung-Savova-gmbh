@@ -1,0 +1,672 @@
+<h2 class="sr-only">Zeiterfassung – Einstechen, Ausstechen und Export</h2>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- HTML5 QR-Code Library für die Handykamera -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans);background:transparent;color:var(--color-text-primary)}
+.app{display:grid;grid-template-rows:auto 1fr;min-height:600px}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:0.5px solid var(--color-border-tertiary);background:var(--color-background-primary)}
+.topbar-title{font-size:15px;font-weight:500;display:flex;align-items:center;gap:8px}
+.badge-norm{font-size:11px;background:#E6F1FB;color:#0C447C;border-radius:4px;padding:2px 8px;font-weight:500}
+.nav{display:flex;gap:2px}
+.nav button{font-size:13px;padding:6px 14px;border:0.5px solid transparent;border-radius:var(--border-radius-md);cursor:pointer;background:transparent;color:var(--color-text-secondary);transition:all .15s}
+.nav button.active{background:var(--color-background-secondary);border-color:var(--color-border-secondary);color:var(--color-text-primary);font-weight:500}
+.nav button:hover:not(.active){background:var(--color-background-secondary)}
+.content{padding:20px;background:var(--color-background-tertiary)}
+.panel{display:none}.panel.active{display:block}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:16px 20px}
+.card-sm{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px 16px}
+.metric-label{font-size:12px;color:var(--color-text-secondary);margin-bottom:4px}
+.metric-val{font-size:22px;font-weight:500}
+
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:13px;color:var(--color-text-secondary);margin-bottom:5px}
+.form-group input,.form-group select{width:100%;padding:8px 10px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);font-size:14px;background:var(--color-background-primary);color:var(--color-text-primary)}
+.form-group input:focus,.form-group select:focus{outline:none;border-color:#378ADD}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);cursor:pointer;font-size:13px;background:var(--color-background-primary);color:var(--color-text-primary);transition:all .15s;font-family:var(--font-sans)}
+.btn:hover{background:var(--color-background-secondary)}
+.btn-primary{background:#185FA5;color:#fff;border-color:#185FA5}
+.btn-primary:hover{background:#0C447C;border-color:#0C447C}
+.btn-success{background:#3B6D11;color:#fff;border-color:#3B6D11}
+.btn-success:hover{background:#27500A}
+.btn-danger{background:#A32D2D;color:#fff;border-color:#A32D2D}
+.btn-danger:hover{background:#791F1F}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+
+.table-wrap{overflow-x:auto;margin-top:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-size:11px;font-weight:500;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.04em;padding:8px 12px;border-bottom:0.5px solid var(--color-border-tertiary);text-align:left;white-space:nowrap}
+td{padding:9px 12px;border-bottom:0.5px solid var(--color-border-tertiary);color:var(--color-text-primary);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--color-background-secondary)}
+tr.storniert-row td{color:var(--color-text-tertiary) !important;opacity:0.5;text-decoration:line-through}
+
+.tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:4px;font-weight:500}
+.tag-ok{background:#EAF3DE;color:#3B6D11}
+.tag-warn{background:#FAEEDA;color:#854F0B}
+.tag-err{background:#FCEBEB;color:#A32D2D}
+
+.section-title{font-size:14px;font-weight:500;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+
+.alert{padding:10px 14px;border-radius:var(--border-radius-md);font-size:13px;margin-bottom:14px;border:0.5px solid}
+.alert-success{background:#EAF3DE;color:#27500A;border-color:#C0DD97}
+.alert-err{background:#FCEBEB;color:#791F1F;border-color:#F7C1C1}
+
+.filter-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+.filter-row select,.filter-row input{font-size:13px;padding:6px 10px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-primary);color:var(--color-text-primary);font-family:var(--font-sans)}
+
+.export-card{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:16px 20px;background:var(--color-background-primary);display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.export-info{flex:1}
+.export-info p{font-size:14px;font-weight:500;margin-bottom:3px}
+.export-info span{font-size:12px;color:var(--color-text-secondary)}
+
+#qr-reader-container {
+  display: none;
+  margin-bottom: 14px;
+  padding: 12px;
+  background: var(--color-background-secondary);
+  border-radius: var(--border-radius-lg);
+  border: 0.5px solid var(--color-border-secondary);
+}
+#reader {
+  width: 100%;
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
+}
+</style>
+
+<div class="app">
+<div class="topbar">
+  <div class="topbar-title">
+    <i class="ti ti-clock" style="font-size:18px" aria-hidden="true"></i>
+    Zeiterfassung Vor-Ort
+  </div>
+  <nav class="nav">
+    <button class="active" onclick="showPanel('stempeln',this)"><i class="ti ti-time" aria-hidden="true"></i> Stempeln</button>
+    <button onclick="showPanel('historie',this)"><i class="ti ti-list" aria-hidden="true"></i> Historie</button>
+    <button onclick="showPanel('export',this)"><i class="ti ti-download" aria-hidden="true"></i> Export</button>
+  </nav>
+</div>
+
+<div class="content">
+
+<!-- PANEL: STEMPELN -->
+<div id="panel-stempeln" class="panel active">
+  <div class="grid4">
+    <div class="card-sm"><div class="metric-label">Buchungen heute</div><div class="metric-val" id="m-heute">0</div></div>
+    <div class="card-sm"><div class="metric-label">Buchungen Monat</div><div class="metric-val" id="m-monat">0</div></div>
+    <div class="card-sm"><div class="metric-label">Aktueller Status</div><div class="metric-val" style="font-size:16px; margin-top:6px;" id="m-status">–</div></div>
+    <div class="card-sm"><div class="metric-label">Letzter Scan</div><div class="metric-val" style="font-size:15px" id="m-letzt">–</div></div>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <div class="section-title"><i class="ti ti-pencil" style="font-size:16px" aria-hidden="true"></i> Zeit erfassen</div>
+      <div id="alert-area"></div>
+      
+      <!-- Kamera Scanner Container (optional, falls QR erneut gescannt werden soll) -->
+      <div id="qr-reader-container">
+        <div id="reader"></div>
+        <button class="btn btn-danger btn-sm" style="margin-top:10px; width:100%; justify-content:center;" onclick="stoppeQrScanner()">
+          <i class="ti ti-x"></i> Kamera schließen
+        </button>
+      </div>
+
+      <div class="form-group">
+        <label>Meisterei / Standort <span style="color:#A32D2D">*</span></label>
+        <select id="inp-meisterei">
+          <option value="AM Öhringen">AM Öhringen</option>
+          <option value="AM Kirchheim unter Teck">AM Kirchheim unter Teck</option>
+          <option value="AM Ulm-Dornstadt">AM Ulm-Dornstadt</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Mitarbeiter Name <span style="color:#A32D2D">*</span></label>
+        <input type="text" id="inp-name" placeholder="Vor- und Nachname eingeben...">
+      </div>
+      <div class="form-group">
+        <label>Bemerkung / Tätigkeitsnachweis</label>
+        <input type="text" id="inp-bemerkung" placeholder="optional (z.B. Pause, Baustelle X)">
+      </div>
+      
+      <div class="btn-row">
+        <button class="btn btn-success" style="flex:1; justify-content:center;" onclick="erfassen('Einstechen')"><i class="ti ti-login" aria-hidden="true"></i> Einstechen (Kommen)</button>
+        <button class="btn btn-danger" style="flex:1; justify-content:center;" onclick="erfassen('Ausstechen')"><i class="ti ti-logout" aria-hidden="true"></i> Ausstechen (Gehen)</button>
+      </div>
+    </div>
+    
+    <div class="card">
+      <div class="section-title"><i class="ti ti-clock" style="font-size:16px" aria-hidden="true"></i> Letchte Buchungen</div>
+      <div id="letzte-liste" style="font-size:13px;color:var(--color-text-secondary)">Noch keine Einträge.</div>
+    </div>
+  </div>
+</div>
+
+<!-- PANEL: HISTORIE -->
+<div id="panel-historie" class="panel">
+  <div class="card">
+    <div class="section-title"><i class="ti ti-history" style="font-size:16px" aria-hidden="true"></i> Buchungshistorie</div>
+    <div class="filter-row">
+      <select id="f-monat" onchange="renderHistorieTabelle()">
+        <option value="">Alle Monate</option>
+      </select>
+      <select id="f-meisterei" onchange="renderHistorieTabelle()">
+        <option value="">Alle Meistereien</option>
+        <option value="AM Öhringen">AM Öhringen</option>
+        <option value="AM Kirchheim unter Teck">AM Kirchheim unter Teck</option>
+        <option value="AM Ulm-Dornstadt">AM Ulm-Dornstadt</option>
+      </select>
+      <input type="text" id="f-suche" placeholder="Suche (Name, Bemerkung...)" oninput="renderHistorieTabelle()" style="width:200px">
+      <span style="font-size:12px;color:var(--color-text-secondary);margin-left:auto" id="count-label"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Datum / Zeit</th>
+            <th>Mitarbeiter Name</th>
+            <th>Meisterei</th>
+            <th>Aktion</th>
+            <th>Bemerkung</th>
+            <th>Status</th>
+            <th>Aktion</th>
+          </tr>
+        </thead>
+        <tbody id="tbody-historie-liste"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- PANEL: EXPORT -->
+<div id="panel-export" class="panel">
+  <div class="grid2">
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="section-title"><i class="ti ti-calendar" style="font-size:16px" aria-hidden="true"></i> Berichtszeitraum & Filter</div>
+        <div class="form-group">
+          <label>Monat / Jahr</label>
+          <select id="exp-monat">
+            <option value="">-- Alle Monate (Gesamt) --</option>
+          </select>        
+        </div>
+        <div class="form-group">
+          <label>Meisterei</label>
+          <select id="exp-ag">
+            <option value="">-- Alle 3 Meistereien --</option>
+            <option value="AM Öhringen">AM Öhringen</option>
+            <option value="AM Kirchheim unter Teck">AM Kirchheim unter Teck</option>
+            <option value="AM Ulm-Dornstadt">AM Ulm-Dornstadt</option>
+          </select>    
+        </div>
+      </div>
+
+      <div class="export-card">
+        <div class="export-info">
+          <p><i class="ti ti-file-spreadsheet" style="color:#3B6D11;vertical-align:-2px;margin-right:6px" aria-hidden="true"></i>CSV-Export</p>
+          <span>Excel / CSV Zeiterfassungsliste</span>
+        </div>
+        <button class="btn btn-success" onclick="exportCSV()"><i class="ti ti-download" aria-hidden="true"></i> CSV</button>
+      </div>
+
+      <div class="export-card">
+        <div class="export-info">
+          <p><i class="ti ti-file-text" style="color:#185FA5;vertical-align:-2px;margin-right:6px" aria-hidden="true"></i>PDF-Bericht</p>
+          <span>Druckbarer Stempelzeiten-Nachweis</span>
+        </div>
+        <button class="btn btn-primary" onclick="exportPDF()"><i class="ti ti-printer" aria-hidden="true"></i> PDF</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><i class="ti ti-chart-bar" style="font-size:16px" aria-hidden="true"></i> Monatsvorschau</div>
+      <div id="vorschau-content" style="font-size:13px;color:var(--color-text-secondary)">
+        Monat auswählen, um Vorschau zu laden.
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+</div>
+
+<script>
+const MY_SUPABASE_URL = "https://bcdejuyjxyzqpoleogby.supabase.co";
+const MY_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjZGVqdXlqeHl6cXBvbGVvZ2J5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NzI2NTMsImV4cCI6MjA5NzE0ODY1M30.8tuj9KlRN5xk59WdefRB_nY2S0iE4QzvIZRVK615FS8";
+
+const supabaseClient = supabase.createClient(MY_SUPABASE_URL, MY_SUPABASE_KEY);
+
+let zeiterfassungen = JSON.parse(localStorage.getItem('zeiterfassung_daten') || '[]');
+let html5QrCode = null;
+
+// Gemerkten Namen beim Laden laden
+window.addEventListener('DOMContentLoaded', () => {
+  const gemerkterName = localStorage.getItem('mitarbeiter_name');
+  if (gemerkterName) {
+    document.getElementById('inp-name').value = gemerkterName;
+  }
+});
+
+// Helper: XSS Schutz
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function save() {
+  try {
+    localStorage.setItem('zeiterfassung_daten', JSON.stringify(zeiterfassungen));
+  } catch (e) {
+    console.error("LocalStorage Save Error:", e);
+  }
+}
+
+function resetForm() {
+  document.getElementById('inp-bemerkung').value = '';
+}
+
+async function speichereInSupabase(neuerEintrag) {
+  try {
+    const { data, error } = await supabaseClient
+      .from('zeiterfassung') 
+      .insert([
+        { 
+          mitarbeiter_name: neuerEintrag.name, 
+          meisterei: neuerEintrag.meisterei,
+          typ: neuerEintrag.typ,
+          datum: neuerEintrag.datum, 
+          uhrzeit: neuerEintrag.uhrzeit, 
+          bemerkung: neuerEintrag.bemerkung,
+          status: neuerEintrag.status
+        }
+      ])
+      .select();
+
+    if (error) throw error;
+    
+    if (data && data.length > 0) {
+      return { success: true, cloudId: data[0].id };
+    }
+    return { success: false };
+  } catch (error) {
+    console.error("Supabase-Fehler beim Speichern:", error.message);
+    return { success: false };
+  }
+} 
+
+async function synchronisiereOfflineEintraege() {
+  const unsynced = zeiterfassungen.filter(l => l.synced === false);
+  if (unsynced.length === 0) return;
+
+  for (let localEntry of unsynced) {
+    const res = await speichereInSupabase(localEntry);
+    if (res.success) {
+      localEntry.id = String(res.cloudId);
+      localEntry.synced = true;
+    }
+  }
+  
+  save();
+  renderHistorieTabelle();
+  updateMetrics();
+  renderLetzt();
+}
+
+async function erfassen(stempelTyp) {
+  const meisterei = document.getElementById('inp-meisterei').value;
+  const nameInput = document.getElementById('inp-name');
+  const name = nameInput.value.trim();
+  const bemerkung = document.getElementById('inp-bemerkung').value.trim();
+
+  if (!name) {
+    showAlert('alert-area', 'Bitte geben Sie Ihren Namen ein.', 'err');
+    nameInput.focus();
+    return;
+  }
+
+  // Name für zukünftiges Stempeln merken
+  localStorage.setItem('mitarbeiter_name', name);
+
+  const jetzt = new Date();
+  const localEntry = {
+    id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), 
+    datum: `${jetzt.getFullYear()}-${pad(jetzt.getMonth()+1)}-${pad(jetzt.getDate())}`,
+    uhrzeit: jetzt.toTimeString().split(' ')[0].substring(0, 5),
+    name: name,
+    meisterei: meisterei,
+    typ: stempelTyp,
+    bemerkung: bemerkung,
+    status: 'Erfasst',     
+    synced: false 
+  };
+
+  zeiterfassungen.unshift(localEntry); 
+  save();                         
+
+  renderHistorieTabelle();
+  buildFilter();
+  updateMetrics();
+  renderLetzt();
+  resetForm();
+
+  showAlert('alert-area', `Erfolgreich gestempelt: ${stempelTyp}!`, 'success');
+
+  const res = await speichereInSupabase(localEntry);
+  if (res.success) {
+    localEntry.id = String(res.cloudId);
+    localEntry.synced = true;
+    save(); 
+    renderHistorieTabelle(); 
+    renderLetzt();
+  }
+}
+
+async function storniereEintrag(id){
+  const eintrag = zeiterfassungen.find(l => l.id === id);
+  if (!eintrag) return;
+  if (eintrag.status === 'Storniert') {
+    alert('Dieser Eintrag ist bereits storniert.');
+    return;
+  }
+
+  if (!confirm(`Stempelbuchung für ${eintrag.name} wirklich stornieren?`)) return;
+
+  eintrag.status = 'Storniert';
+  
+  if (eintrag.synced) {
+    try {
+      const { error } = await supabaseClient
+        .from('zeiterfassung')
+        .update({ status: 'Storniert' }) 
+        .eq('id', id); 
+
+      if (error) throw error;
+    } catch (e) {
+      eintrag.synced = false;
+    }
+  }
+
+  save();
+  renderHistorieTabelle();
+  buildFilter();
+  updateMetrics();
+  renderLetzt();
+}
+
+function updateMetrics(){
+  const td=today();const mo=td.slice(0,7);
+  const valide = zeiterfassungen.filter(l => l.status !== 'Storniert');
+
+  document.getElementById('m-heute').textContent=valide.filter(l=>l.datum===td).length;
+  document.getElementById('m-monat').textContent=valide.filter(l=>l.datum.startsWith(mo)).length;
+  
+  const last=valide[0]; 
+  document.getElementById('m-status').textContent=last ? `${last.typ} (${last.uhrzeit})` : '–';
+  document.getElementById('m-status').style.color = last && last.typ === 'Einstechen' ? '#3B6D11' : '#A32D2D';
+
+  document.getElementById('m-letzt').textContent=last ? last.datum.slice(5)+' '+escapeHtml(last.name) : '–';
+}
+
+function renderLetzt(){
+  const el=document.getElementById('letzte-liste');if(!zeiterfassungen.length){el.innerHTML='<span>Noch keine Einträge.</span>';return;}
+
+  el.innerHTML=zeiterfassungen.slice(0,8).map(l=> {
+    const isStorniert = l.status === 'Storniert';
+    return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:0.5px solid var(--color-border-tertiary); ${isStorniert ? 'opacity:0.4;text-decoration:line-through;' : ''}">
+      <span style="color:var(--color-text-secondary)">${escapeHtml(l.datum)} ${escapeHtml(l.uhrzeit||'')}</span>
+      <span style="font-weight:500">${escapeHtml(l.name)} (${escapeHtml(l.typ)})</span>
+      <span class="tag ${isStorniert ? 'tag-err' : (l.synced ? 'tag-ok' : 'tag-warn')}">${isStorniert ? 'Storniert' : (l.synced ? 'Cloud' : 'Lokal')}</span>
+    </div>`
+  }).join('');
+}
+
+function showPanel(id,btn){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));
+  document.getElementById('panel-'+id).classList.add('active');
+  btn.classList.add('active');
+  
+  if(id==='historie'){ buildFilter(); renderHistorieTabelle(); synchronisiereOfflineEintraege(); }
+  if(id==='stempeln'){ updateMetrics(); renderLetzt(); synchronisiereOfflineEintraege(); }
+  if(id==='export'){updateVorschau();}
+}
+
+function pad(n){return String(n).padStart(2,'0')}
+function today(){const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
+
+function showAlert(id,msg,type){
+  const el=document.getElementById(id);
+  const alertClass = type === 'success' ? 'alert-success' : 'alert-err';
+  el.innerHTML=`<div class="alert ${alertClass}">${escapeHtml(msg)}</div>`;
+  setTimeout(()=>{el.innerHTML=''},3500);
+}
+
+function buildFilter(){
+  const monate=[...new Set(zeiterfassungen.map(l=>l.datum.slice(0,7)))].sort().reverse();
+  const sel=document.getElementById('f-monat');
+  const cur=sel.value;
+  sel.innerHTML='<option value="">Alle Monate</option>';
+  monate.forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent=m;sel.appendChild(o)});
+  if(cur)sel.value=cur;
+}
+
+function renderHistorieTabelle(){
+  const mo=document.getElementById('f-monat').value;
+  const mei=document.getElementById('f-meisterei').value;
+  const q=(document.getElementById('f-suche').value||'').toLowerCase();
+
+  let data = zeiterfassungen.filter(l => {
+    if(mo && !l.datum.startsWith(mo)) return false;
+    if(mei && l.meisterei !== mei) return false;
+    if(q && !(
+      l.name.toLowerCase().includes(q) || 
+      l.datum.includes(q) || 
+      (l.meisterei||'').toLowerCase().includes(q) ||
+      (l.bemerkung||'').toLowerCase().includes(q)
+    )) return false;
+    return true;
+  });
+  
+  document.getElementById('count-label').textContent=`${data.length} Einträge`;
+  const tb=document.getElementById('tbody-historie-liste');
+  if(!data.length){
+    tb.innerHTML='<tr><td colspan="7" style="color:var(--text-secondary);text-align:center;padding:20px">Keine Zeiterfassungen gefunden.</td></tr>';
+    return;
+  }
+  
+  tb.innerHTML=data.map(l=>{
+    const isStorniert = l.status === 'Storniert';
+    
+    return `<tr class="${isStorniert ? 'storniert-row' : ''}">
+      <td>${escapeHtml(l.datum)} <span style="color:var(--color-text-secondary);font-size:11px">${escapeHtml(l.uhrzeit||'')}</span></td>
+      <td style="font-weight:500">${escapeHtml(l.name)}</td>
+      <td>${escapeHtml(l.meisterei||'–')}</td>
+      <td><span class="tag ${l.typ === 'Einstechen' ? 'tag-ok' : 'tag-err'}">${escapeHtml(l.typ)}</span></td>
+      <td>${escapeHtml(l.bemerkung||'–')}</td>
+      <td><span class="tag ${isStorniert ? 'tag-err' : (l.synced ? 'tag-ok' : 'tag-warn')}">${isStorniert ? 'Storniert' : (l.synced ? 'Gespeichert' : 'Wartet...')}</span></td>
+      <td>
+        <button class="btn btn-sm" onclick="storniereEintrag('${escapeHtml(l.id)}')" ${isStorniert ? 'disabled' : ''}>
+          <i class="ti ti-backspace"></i> Stornieren
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function getExportData(){
+  const mo=document.getElementById('exp-monat').value;
+  const aktiveData = zeiterfassungen.filter(l => l.status !== 'Storniert');
+  return mo ? aktiveData.filter(l=>l.datum.startsWith(mo)) : aktiveData;
+}
+
+function updateVorschau(){
+  const data=getExportData();
+  const el=document.getElementById('vorschau-content');
+  if(!data.length){el.innerHTML='<span>Keine aktiven Buchungen im Zeitraum.</span>';return;}
+  const total=data.length;const byName={};data.forEach(l=>{byName[l.name]=(byName[l.name]||0)+1});
+  
+  el.innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px"><div class="card-sm"><div class="metric-label">Buchungen gesamt</div><div class="metric-val">${total}</div></div><div class="card-sm"><div class="metric-label">Mitarbeiter</div><div class="metric-val">${Object.keys(byName).length}</div></div></div><div class="section-title" style="font-size:13px">Nach Mitarbeiter</div>`+Object.entries(byName).map(([name,cnt])=>{const max=Math.max(...Object.values(byName));return`<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:13px"><span>${escapeHtml(name)}</span><span style="font-weight:500">${cnt}×</span></div><div class="progress-bar"><div class="progress-fill" style="width:${Math.round(cnt/max*100)}%"></div></div></div>`}).join('');
+}
+
+document.getElementById('exp-monat').addEventListener('change',updateVorschau);
+
+async function exportCSV() {
+  const mo = document.getElementById('exp-monat').value;
+  const ag = document.getElementById('exp-ag').value;
+
+  try {
+    const { data, error } = await supabaseClient.from('zeiterfassung').select('*');
+    if (error) throw error;
+
+    if (!data || data.length === 0) {
+      alert('Keine Daten in Supabase gefunden.');
+      return;
+    }
+
+    let gefilterteDaten = data.filter(l => l.status !== 'Storniert');
+    if (mo) {
+      gefilterteDaten = gefilterteDaten.filter(l => (l.datum || '').startsWith(mo));
+    }
+
+    if (ag) {
+      gefilterteDaten = gefilterteDaten.filter(l => (l.meisterei || '').toLowerCase().trim() === ag.toLowerCase().trim());
+    }
+
+    if (gefilterteDaten.length === 0) {
+      alert(`Keine Buchungen für den Zeitraum ${mo || 'gesamt'} und Meisterei "${ag || 'alle'}" gefunden.`);
+      return;
+    }
+
+    const header = ['Datum', 'Uhrzeit', 'Mitarbeiter Name', 'Meisterei', 'Typ (Kommen/Gehen)', 'Bemerkung'];
+    
+    const rows = gefilterteDaten.map(l => [
+      l.datum || '',
+      l.uhrzeit || '',
+      l.mitarbeiter_name || '',
+      l.meisterei || '–',
+      l.typ || '–',
+      l.bemerkung || ''
+    ].join(';'));
+
+    const csv = '\uFEFF' + [header.join(';'), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    
+    const meistereiNameClean = ag ? `_${ag.replace(/\s+/g, '_')}` : '';
+    a.download = `Zeiterfassung_${mo || 'gesamt'}${meistereiNameClean}.csv`;
+    
+    a.click();
+    URL.revokeObjectURL(url);
+
+    showAlert('alert-area', `CSV-Export (${gefilterteDaten.length} Einträge) erfolgreich!`, 'success');
+  } catch (err) {
+    console.error("Export-Fehler:", err.message);
+    alert("Fehler beim Cloud-Export: " + err.message);
+  }
+}
+  
+async function exportPDF() {
+  const mo = document.getElementById('exp-monat').value;
+  const ag = document.getElementById('exp-ag').value;
+
+  try {
+    const { data, error } = await supabaseClient.from('zeiterfassung').select('*');
+    if (error) throw error;
+
+    if (!data || data.length === 0) {
+      alert('Keine Daten in Supabase gefunden.');
+      return;
+    }
+
+    let gefilterteDaten = data.filter(l => l.status !== 'Storniert');
+    if (mo) {
+      gefilterteDaten = gefilterteDaten.filter(l => (l.datum || '').startsWith(mo));
+    }
+
+    if (ag) {
+      gefilterteDaten = gefilterteDaten.filter(l => (l.meisterei || '').toLowerCase().trim() === ag.toLowerCase().trim());
+    }
+
+    if (gefilterteDaten.length === 0) {
+      alert(`Keine Buchungen für den Zeitraum ${mo || 'gesamt'} und Meisterei "${ag || 'alle'}" gefunden.`);
+      return;
+    }
+
+    const total = gefilterteDaten.length;
+    const rows = gefilterteDaten.map(l => {
+      return `
+        <tr>
+          <td>${escapeHtml(l.datum)} ${escapeHtml(l.uhrzeit||'–')}</td>
+          <td><strong>${escapeHtml(l.mitarbeiter_name)}</strong></td>
+          <td>${escapeHtml(l.meisterei||'–')}</td>
+          <td>${escapeHtml(l.typ)}</td>
+          <td>${escapeHtml(l.bemerkung||'–')}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const html = `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>Zeiterfassung Bericht</title><style>body{font-family:Arial,sans-serif;font-size:12px;margin:30px;color:#1a1a1a}h1{font-size:18px;margin-bottom:4px}.subtitle{color:#555;font-size:13px;margin-bottom:18px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:4px 40px;font-size:12px;margin-bottom:20px;padding:12px;background:#f5f5f5;border-radius:4px}.meta span{color:#555}table{width:100%;border-collapse:collapse;margin-top:8px}th{font-size:10px;text-transform:uppercase;letter-spacing:.04em;background:#f0f0f0;padding:7px 10px;border-bottom:1px solid #ddd;text-align:left}td{padding:7px 10px;border-bottom:0.5px solid #eee;font-size:11.5px}tr:nth-child(even) td{background:#fafafa}.footer{margin-top:24px;font-size:10px;color:#888;border-top:1px solid #eee;padding-top:8px}.total-row td{font-weight:bold;background:#e8f5e9;border-top:2px solid #ccc}@media print{body{margin:15mm}}</style></head><body><h1>Zeiterfassungs-Protokoll</h1><div class="subtitle">Monatsbericht ${escapeHtml(mo||'Gesamtzeitraum')}</div><div class="meta"><div><span>Meisterei:</span><br><strong>${escapeHtml(ag || 'Alle Meistereien')}</strong></div><div><span>Berichtszeitraum:</span><br><strong>${escapeHtml(mo||'alle')}</strong></div><div><span>Erstellt am:</span><br><strong>${new Date().toLocaleDateString('de-DE')}</strong></div><div><span>Erfasste Buchungen:</span><br><strong>${total}</strong></div></div><table><thead><tr><th>Datum / Zeit</th><th>Mitarbeiter Name</th><th>Meisterei</th><th>Aktion</th><th>Bemerkung</th></tr></thead><tbody>${rows}</tbody><tfoot><tr class="total-row"><td colspan="4">Gesamt Buchungen</td><td>${total}×</td></tr></tfoot></table><div class="footer">Dieses Dokument wurde automatisch aus dem Zeiterfassungssystem generiert.</div><script>window.onload=function(){window.print();}<\/script></body></html>`;
+
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.write(html);
+      win.document.close();
+    } else {
+      alert('Pop-up wurde vom Browser blockiert! Bitte erlaube Pop-ups für diese Seite.');
+    }
+  } catch (err) {
+    console.error("Export-Fehler:", err.message);
+    alert("Fehler beim PDF-Export: " + err.message);
+  }
+}
+
+async function ladeExportMonate() {
+  try {
+    const { data, error } = await supabaseClient
+      .from('zeiterfassung')
+      .select('datum');
+
+    if (error || !data) return;
+
+    const monateSet = new Set();
+    data.forEach(item => {
+      const d = item.datum;
+      if (d && d.length >= 7) {
+        monateSet.add(d.substring(0, 7));
+      }
+    });
+
+    const monateArray = Array.from(monateSet).sort().reverse();
+    const selectEl = document.getElementById('exp-monat');
+    
+    selectEl.innerHTML = '<option value="">-- Alle Monate (Gesamt) --</option>';
+    monateArray.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      selectEl.appendChild(opt);
+    });
+
+  } catch (e) {
+    console.error("Fehler beim Laden der Monatsliste:", e);
+  }
+}
+
+// Initialisierung bei App-Start
+updateMetrics();
+renderLetzt();
+synchronisiereOfflineEintraege();
+ladeExportMonate();
+</script>
