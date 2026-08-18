@@ -215,27 +215,51 @@ window.addEventListener('DOMContentLoaded', async () => {
 // KAMERA SCANNER
 function starteKameraScanner() {
   document.getElementById('reader-container').style.display = 'block';
-  html5QrCode = new Html5Qrcode("reader");
   
+  if (!html5QrCode) {
+    html5QrCode = new Html5Qrcode("reader");
+  }
+
+  const config = { 
+    fps: 10, 
+    qrbox: { width: 220, height: 220 } 
+  };
+
+  // 1. Versuch: Gezielte Anforderung der Rückkamera für iPhones
   html5QrCode.start(
-    { facingMode: "environment" },
-    { fps: 10, qrbox: { width: 220, height: 220 } },
+    { facingMode: "environment" }, 
+    config,
     (decodedText) => {
       stoppeKameraScanner();
-      let id = decodedText;
-      if (decodedText.includes('uid=')) {
-        try {
-          const url = new URL(decodedText);
-          id = url.searchParams.get('uid');
-        } catch(e) {}
-      }
-      ladeAnlageAusSupabase(id);
+      verarbeiteScanResultat(decodedText);
     },
-    () => {}
+    (errorMessage) => {}
   ).catch(err => {
-    showAlert("Kamera konnte nicht gestartet werden: " + err, "err");
-    document.getElementById('reader-container').style.display = 'none';
+    // 2. Fallback: Falls iOS "environment" blockiert, nutze allgemeine Kamera
+    html5QrCode.start(
+      true, 
+      config,
+      (decodedText) => {
+        stoppeKameraScanner();
+        verarbeiteScanResultat(decodedText);
+      },
+      () => {}
+    ).catch(e => {
+      showAlert("Kamera-Zugriff abgelehnt. Bitte Berechtigungen in Safari prüfen.", "err");
+      document.getElementById('reader-container').style.display = 'none';
+    });
   });
+}
+
+function verarbeiteScanResultat(decodedText) {
+  let id = decodedText;
+  if (decodedText.includes('uid=')) {
+    try {
+      const url = new URL(decodedText);
+      id = url.searchParams.get('uid');
+    } catch(e) {}
+  }
+  ladeAnlageAusSupabase(id);
 }
 
 function stoppeKameraScanner() {
