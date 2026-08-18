@@ -166,16 +166,15 @@ function stoppeKameraScanner() {
   }
 }
 
-// ANLAGE DIREKT AUS DER TABELLE "Zeiterfassung" LADEN
+// 1. ANLAGE AUS DER STAMMDATEN-TABELLE LADEN
 async function ladeAnlageAusSupabase(id) {
   showAlert("Lade Anlagendaten...", "info");
-
-  // Bereinigt eventuelle Leerzeichen aus dem QR-Code Scan
   const cleanId = String(id).trim();
 
   try {
+    // Greift auf die Stammdaten-Tabelle behälter_QR zu!
     const { data, error } = await supabaseClient
-      .from('Zeiterfassung') // Liest exakt aus deiner Zeiterfassung-Tabelle
+      .from('Zeiterfassung') 
       .select('*')
       .eq('id', cleanId)
       .single();
@@ -192,18 +191,43 @@ async function ladeAnlageAusSupabase(id) {
 
     aktuelleAnlage = data;
     
-    // Befüllt die Anzeigefelder (Achte auf name [klein] und Meisterei [groß])
+    // Anzeigefelder befüllen (Spalten aus deiner behälter_QR Tabelle)
     document.getElementById('disp-anlage').textContent = data.name;
     document.getElementById('disp-meisterei').textContent = data.Meisterei;
 
-    // Stempel-Buttons freischalten
+    // Buttons freischalten
     document.getElementById('btn-ein').disabled = false;
     document.getElementById('btn-aus').disabled = false;
 
-    showAlert(`Anlage "${data.name}" erfolgreich erkannt!`, "success");
+    showAlert(`Anlage "${data.name}" erkannt!`, "success");
 
   } catch (e) {
     showAlert("Fehler beim Abrufen der Anlagendaten: " + e.message, "err");
+  }
+}
+
+// 2. STEMPEL-EINTRAG IN DIE PROTOKOLL-TABELLE SCHREIBEN
+async function sendeAnSupabase(name, typ, bemerkung, gpsErfolgreich) {
+  try {
+    // Schreibt das Ergebnis in die Tabelle Zeiterfassung
+    const { error } = await supabaseClient
+      .from('Zeiterfassung')
+      .insert([{
+        mitarbeiter_name: name,
+        anlage_id: aktuelleAnlage.id,
+        anlagen_name: aktuelleAnlage.name,
+        meisterei: aktuelleAnlage.Meisterei,
+        typ: typ,
+        bemerkung: bemerkung
+      }]);
+
+    if (error) throw error;
+
+    showAlert(`Erfolgreich als <strong>${typ}</strong> erfasst!`, "success");
+    document.getElementById('inp-bemerkung').value = '';
+
+  } catch (err) {
+    showAlert("Fehler beim Speichern: " + err.message, "err");
   }
 }
 
