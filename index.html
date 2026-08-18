@@ -166,19 +166,23 @@ function stoppeKameraScanner() {
   }
 }
 
-// ANLAGE AUS SUPABASE LADEN
+// ANLAGE DIREKT AUS DER TABELLE "Zeiterfassung" LADEN
 async function ladeAnlageAusSupabase(id) {
   showAlert("Lade Anlagendaten...", "info");
 
+  // Bereinigt eventuelle Leerzeichen aus dem QR-Code Scan
+  const cleanId = String(id).trim();
+
   try {
     const { data, error } = await supabaseClient
-      .from('behälter_QR') // Greift direkt auf deine Supabase-Tabelle zu
+      .from('Zeiterfassung') // Liest exakt aus deiner Zeiterfassung-Tabelle
       .select('*')
-      .eq('id', id)
+      .eq('id', cleanId)
       .single();
 
     if (error || !data) {
-      showAlert(`Ungültige oder unbekannte Anlagen-ID (${id}).`, "err");
+      console.error("Supabase Error:", error);
+      showAlert(`Ungültige oder unbekannte Anlagen-ID (${cleanId}).`, "err");
       document.getElementById('disp-anlage').textContent = "Unbekannte Anlage";
       document.getElementById('disp-meisterei').textContent = "–";
       document.getElementById('btn-ein').disabled = true;
@@ -188,7 +192,7 @@ async function ladeAnlageAusSupabase(id) {
 
     aktuelleAnlage = data;
     
-    // UI befüllen
+    // Befüllt die Anzeigefelder (Achte auf name [klein] und Meisterei [groß])
     document.getElementById('disp-anlage').textContent = data.name;
     document.getElementById('disp-meisterei').textContent = data.Meisterei;
 
