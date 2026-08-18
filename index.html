@@ -3,9 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sichere Zeiterfassung – Vor-Ort Scan</title>
+  <title>Zeiterfassung Vor-Ort</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- Kamera QR-Scanner Library -->
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
   <style>
@@ -59,7 +58,7 @@
   
   <div id="alert-area"></div>
 
-  <!-- KAMERA SCANNER BUTTON & CONTAINER -->
+  <!-- Schritt 1: QR-Code Scannen -->
   <button class="btn btn-primary" id="btn-scan" style="width:100%; margin-bottom:15px;" onclick="starteKameraScanner()">
     📷 QR-Code mit Kamera scannen
   </button>
@@ -71,15 +70,16 @@
     </button>
   </div>
 
-  <!-- Automatisch geladene Anlagen-Info -->
+  <!-- Erkannte Anlage -->
   <div class="info-box">
     <div>Gescannte Arbeitsstätte / Anlage:</div>
-    <strong id="disp-anlage">Bitte QR-Code scannen...</strong>
+    <strong id="disp-anlage">Bitte zuerst QR-Code scannen...</strong>
     
     <div style="margin-top:8px;">Zugehörige Meisterei:</div>
     <strong id="disp-meisterei">–</strong>
   </div>
 
+  <!-- Schritt 2: Angaben des Mitarbeiters -->
   <div class="form-group">
     <label for="inp-name">Mitarbeiter Name *</label>
     <input type="text" id="inp-name" placeholder="Vor- und Nachname">
@@ -90,6 +90,7 @@
     <input type="text" id="inp-bemerkung" placeholder="z.B. Wartung, Pause">
   </div>
 
+  <!-- Schritt 3: Einstechen oder Ausstechen -->
   <div class="btn-row">
     <button class="btn btn-success" id="btn-ein" onclick="stempeln('Einstechen')" disabled>Einstechen</button>
     <button class="btn btn-danger" id="btn-aus" onclick="stempeln('Ausstechen')" disabled>Ausstechen</button>
@@ -97,7 +98,6 @@
 </div>
 
 <script>
-// Supabase-Konfiguration
 const SUPABASE_URL = "https://bcdejuyjxyzqpoleogby.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjZGVqdXlqeHl6cXBvbGVvZ2J5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NzI2NTMsImV4cCI6MjA5NzE0ODY1M30.8tuj9KlRN5xk59WdefRB_nY2S0iE4QzvIZRVK615FS8";
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -105,7 +105,7 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let aktuelleAnlage = null;
 let html5QrCode = null;
 
-// Beim Laden prüfen, ob URL-Parameter vorhanden ist
+// Prüfen, ob eine UID per URL übergeben wurde
 window.addEventListener('DOMContentLoaded', async () => {
   const gemerkterName = localStorage.getItem('mitarbeiter_name');
   if (gemerkterName) document.getElementById('inp-name').value = gemerkterName;
@@ -116,11 +116,10 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (uid) {
     ladeAnlageAusSupabase(uid);
   } else {
-    showAlert("Klicken Sie auf 'Kamera scannen' oder scannen Sie den Code vor Ort.", "info");
+    showAlert("Bitte scannen Sie den QR-Code an der Anlage.", "info");
   }
 });
 
-// KAMERA SCANNER LOGIK
 function starteKameraScanner() {
   document.getElementById('reader-container').style.display = 'block';
   html5QrCode = new Html5Qrcode("reader");
@@ -138,12 +137,11 @@ function starteKameraScanner() {
           id = url.searchParams.get('uid');
         } catch(e) {}
       }
-      
       ladeAnlageAusSupabase(id);
     },
     (errorMessage) => {}
   ).catch(err => {
-    showAlert("Kamera-Zugriff fehlgeschlagen: " + err, "err");
+    showAlert("Kamera konnte nicht gestartet werden: " + err, "err");
     document.getElementById('reader-container').style.display = 'none';
   });
 }
@@ -160,33 +158,20 @@ function stoppeKameraScanner() {
   }
 }
 
+// 1. ANLAGE LADEN (Liest die Stammdaten)
 async function ladeAnlageAusSupabase(id) {
   showAlert("Lade Anlagendaten...", "info");
-
-  // Bereinigt alle unsichtbaren Zeichen, Zeilenumbrüche & Leerzeichen
   const cleanId = String(id).replace(/[\r\n\t]/g, '').trim();
 
-  console.log("Gesuchte ID (bereinigt):", cleanId);
-
   try {
-    const { data, error, status } = await supabaseClient
-      .from('Zeiterfassung')
+    const { data, error } = await supabaseClient
+      .from('Zeiterfassung') 
       .select('*')
       .eq('id', cleanId)
-      .maybeSingle(); // Verhindert Absturz bei Abfrage-Konflikten
+      .maybeSingle();
 
-    // Konsolen-Debugging
-    console.log("Supabase Antowrt Status:", status);
-    console.log("Empfangene Daten:", data);
-    console.log("Supabase Fehlerobjekt:", error);
-
-    if (error) {
-      showAlert(`Supabase-Datenbank-Fehler: ${error.message} (Code: ${error.code})`, "err");
-      return;
-    }
-
-    if (!data) {
-      showAlert(`ID "${cleanId}" wurde in der Datenbank nicht gefunden. (Mögliche Ursache: RLS-Sperre oder falscher Tabellenname)`, "err");
+    if (error || !data) {
+      showAlert(`Anlage mit ID "${cleanId}" nicht gefunden.`, "err");
       document.getElementById('disp-anlage').textContent = "Unbekannte Anlage";
       document.getElementById('disp-meisterei').textContent = "–";
       document.getElementById('btn-ein').disabled = true;
@@ -194,27 +179,22 @@ async function ladeAnlageAusSupabase(id) {
       return;
     }
 
-    // Erfolgsfall
     aktuelleAnlage = data;
+    
     document.getElementById('disp-anlage').textContent = data.name;
     document.getElementById('disp-meisterei').textContent = data.Meisterei;
 
     document.getElementById('btn-ein').disabled = false;
     document.getElementById('btn-aus').disabled = false;
 
-    showAlert(`Anlage "${data.name}" erkannt!`, "success");
+    showAlert(`Anlage "${data.name}" erkannt! Bitte Namen eingeben und stempeln.`, "success");
 
   } catch (e) {
-    showAlert("Unerwarteter Fehler: " + e.message, "err");
+    showAlert("Fehler beim Abrufen der Anlagendaten: " + e.message, "err");
   }
 }
 
-function showAlert(msg, type) {
-  const el = document.getElementById('alert-area');
-  el.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
-}
-
-// STEMPELN & IN SUPABASE SPEICHERN
+// 2. ZEIT ERFASSEN (Erstellt eine neue Buchungszeile in Supabase)
 async function stempeln(typ) {
   const nameInput = document.getElementById('inp-name');
   const name = nameInput.value.trim();
@@ -226,14 +206,14 @@ async function stempeln(typ) {
   }
 
   if (!aktuelleAnlage) {
-    showAlert("Keine gültige Anlage geladen. Bitte erst scannen.", "err");
+    showAlert("Bitte scannen Sie zuerst den QR-Code der Anlage.", "err");
     return;
   }
 
   localStorage.setItem('mitarbeiter_name', name);
 
   try {
-    // Schreibt die Stempel-Daten genau mit deinen Feldbezeichnungen
+    // Fügt eine neue Zeile mit den erfassten Daten in Supabase ein
     const { error } = await supabaseClient
       .from('Zeiterfassung')
       .insert([{
@@ -252,6 +232,11 @@ async function stempeln(typ) {
   } catch (err) {
     showAlert("Fehler beim Speichern: " + err.message, "err");
   }
+}
+
+function showAlert(msg, type) {
+  const el = document.getElementById('alert-area');
+  el.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
 }
 </script>
 
