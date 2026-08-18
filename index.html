@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sichere Zeiterfassung – Vor-Ort Scan</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Kamera QR-Scanner Library -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:system-ui,-apple-system,sans-serif;background:#f4f5f7;color:#1e293b;padding:15px}
@@ -24,11 +27,30 @@
     .btn:disabled{opacity:0.5;cursor:not-allowed}
     .btn-success{background:#16a34a}
     .btn-danger{background:#dc2626}
+    .btn-primary{background:#2563eb}
+    .btn-secondary{background:#64748b}
 
     .alert{padding:12px;border-radius:6px;font-size:13px;margin-bottom:15px;font-weight:500}
     .alert-err{background:#fee2e2;color:#991b1b;border:1px solid #fecaca}
     .alert-success{background:#dcfce7;color:#166534;border:1px solid #bbf7d0}
     .alert-info{background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd}
+
+    /* Kamera-Ansicht Styles */
+    #reader-container {
+      display: none;
+      margin-bottom: 15px;
+      padding: 10px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+    }
+    #reader {
+      width: 100%;
+      max-width: 380px;
+      margin: 0 auto;
+      border-radius: 6px;
+      overflow: hidden;
+    }
   </style>
 </head>
 <body>
@@ -38,10 +60,22 @@
   
   <div id="alert-area"></div>
 
-  <!-- Automatisch geladene Anlagen-Info aus dem QR-Code -->
+  <!-- KAMERA SCANNER BUTTON & CONTAINER -->
+  <button class="btn btn-primary" id="btn-scan" style="width:100%; margin-bottom:15px;" onclick="starteKameraScanner()">
+    📷 QR-Code mit Kamera scannen
+  </button>
+
+  <div id="reader-container">
+    <div id="reader"></div>
+    <button class="btn btn-secondary" style="width:100%; margin-top:10px; padding:8px;" onclick="stoppeKameraScanner()">
+      Kamera schließen
+    </button>
+  </div>
+
+  <!-- Automatisch geladene Anlagen-Info -->
   <div class="info-box">
     <div>Gescannte Arbeitsstätte / Anlage:</div>
-    <strong id="disp-anlage">Wird geladen...</strong>
+    <strong id="disp-anlage">Bitte QR-Code scannen...</strong>
     
     <div style="margin-top:8px;">Zugehörige Meisterei:</div>
     <strong id="disp-meisterei">–</strong>
@@ -70,58 +104,111 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let aktuelleAnlage = null;
+let html5QrCode = null;
 
-// Beim Öffnen der Seite den QR-Code URL-Parameter lesen
+// Beim Öffnen der Seite prüfen, ob bereits ein QR-Code in der URL übergeben wurde
 window.addEventListener('DOMContentLoaded', async () => {
-  // Gemerkten Namen laden
   const gemerkterName = localStorage.getItem('mitarbeiter_name');
   if (gemerkterName) document.getElementById('inp-name').value = gemerkterName;
 
-  // URL-Parameter auslesen (z.B. ?uid=UID-OEH-01)
   const urlParams = new URLSearchParams(window.location.search);
   const uid = urlParams.get('uid');
 
-  if (!uid) {
-    showAlert("Kein gültiger QR-Code gescannt! Bitte scannen Sie den QR-Code vor Ort an der Anlage.", "err");
-    document.getElementById('disp-anlage').textContent = "Kein QR-Code erkannt";
-    return;
+  if (uid) {
+    ladeAnlageAusSupabase(uid);
+  } else {
+    showAlert("Klicken Sie auf 'Kamera scannen' oder scannen Sie den Code vor Ort.", "info");
   }
+});
 
-  // Anlage aus Supabase anhand der UID abfragen
+// KAMERA SCANNER LOGIK
+function starteKameraScanner() {
+  document.getElementById('reader-container').style.display = 'block';
+  
+  html5QrCode = new Html5Qrcode("reader");
+  
+  html5QrCode.start(
+    { facingMode: "environment" }, // Nutzt die Hauptkamera
+    { fps: 10, qrbox: { width: 220, height: 220 } },
+    (decodedText) => {
+      // Erfolgreich gescannt
+      stoppeKameraScanner();
+      
+      // Falls eine komplette URL gescannt wurde, extract ID
+      let id = decodedText;
+      if (decodedText.includes('uid=')) {
+        try {
+          const url = new URL(decodedText);
+          id = url.searchParams.get('uid');
+        } catch(e) {}
+      }
+      
+      ladeAnlageAusSupabase(id);
+    },
+    (errorMessage) => {
+      // Laufender Suchprozess
+    }
+  ).catch(err => {
+    showAlert("Kamera-Zugriff fehlgeschlagen: " + err, "err");
+    document.getElementById('reader-container').style.display = 'none';
+  });
+}
+
+function stoppeKameraScanner() {
+  if (html5QrCode) {
+    html5QrCode.stop().then(() => {
+      document.getElementById('reader-container').style.display = 'none';
+    }).catch(() => {
+      document.getElementById('reader-container').style.display = 'none';
+    });
+  } else {
+    document.getElementById('reader-container').style.display = 'none';
+  }
+}
+
+// ANLAGE AUS SUPABASE LADEN
+async function ladeAnlageAusSupabase(id) {
+  showAlert("Lade Anlagendaten...", "info");
+
   try {
     const { data, error } = await supabaseClient
-      .from('anlagen')
+      .from('behälter_QR') // Greift direkt auf deine Supabase-Tabelle zu
       .select('*')
-      .eq('uid', uid)
+      .eq('id', id)
       .single();
 
     if (error || !data) {
-      showAlert(`Ungültige oder unbekannte Anlagen-UID (${uid}).`, "err");
+      showAlert(`Ungültige oder unbekannte Anlagen-ID (${id}).`, "err");
       document.getElementById('disp-anlage').textContent = "Unbekannte Anlage";
+      document.getElementById('disp-meisterei').textContent = "–";
+      document.getElementById('btn-ein').disabled = true;
+      document.getElementById('btn-aus').disabled = true;
       return;
     }
 
     aktuelleAnlage = data;
     
-    // UI mit echten Daten aus der Datenbank befüllen
-    document.getElementById('disp-anlage').textContent = data.anlagen_name;
-    document.getElementById('disp-meisterei').textContent = data.meisterei;
+    // UI befüllen
+    document.getElementById('disp-anlage').textContent = data.name;
+    document.getElementById('disp-meisterei').textContent = data.Meisterei;
 
-    // Buttons freischalten
+    // Stempel-Buttons freischalten
     document.getElementById('btn-ein').disabled = false;
     document.getElementById('btn-aus').disabled = false;
+
+    showAlert(`Anlage "${data.name}" erfolgreich erkannt!`, "success");
 
   } catch (e) {
     showAlert("Fehler beim Abrufen der Anlagendaten: " + e.message, "err");
   }
-});
+}
 
 function showAlert(msg, type) {
   const el = document.getElementById('alert-area');
   el.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
 }
 
-// Distanzberechnung für Geofencing (in Metern)
+// DISTANZBERECHNUNG (GPS)
 function berechneMeter(lat1, lon1, lat2, lon2) {
   const R = 6371000;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -130,6 +217,7 @@ function berechneMeter(lat1, lon1, lat2, lon2) {
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
 }
 
+// STEMPEL-FUNKTION
 async function stempeln(typ) {
   const nameInput = document.getElementById('inp-name');
   const name = nameInput.value.trim();
@@ -141,13 +229,13 @@ async function stempeln(typ) {
   }
 
   if (!aktuelleAnlage) {
-    showAlert("Keine gültige Anlage geladen.", "err");
+    showAlert("Keine gültige Anlage geladen. Bitte erst scannen.", "err");
     return;
   }
 
   localStorage.setItem('mitarbeiter_name', name);
 
-  // OPTIONAL: GPS-Validierung (Falls Koordinaten in Supabase hinterlegt sind)
+  // GPS-Prüfung (Falls Koordinaten in der Tabelle hinterlegt sind)
   if (aktuelleAnlage.latitude && aktuelleAnlage.longitude) {
     showAlert("Prüfe Standort-Berechtigung...", "info");
     
@@ -158,14 +246,14 @@ async function stempeln(typ) {
 
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
+        const radius = aktuelleAnlage.radius_meter || 200;
         const distanz = berechneMeter(pos.coords.latitude, pos.coords.longitude, aktuelleAnlage.latitude, aktuelleAnlage.longitude);
         
-        if (distanz > aktuelleAnlage.radius_meter) {
-          showAlert(`Sie befinden sich nicht vor Ort! (${Math.round(distanz)}m entfernt, erlaubt: ${aktuelleAnlage.radius_meter}m)`, "err");
+        if (distanz > radius) {
+          showAlert(`Sie befinden sich nicht vor Ort! (${Math.round(distanz)}m entfernt, erlaubt: ${radius}m)`, "err");
           return;
         }
 
-        // Standort OK -> Speichern
         await sendeAnSupabase(name, typ, bemerkung, true);
       },
       () => {
@@ -174,21 +262,19 @@ async function stempeln(typ) {
       { enableHighAccuracy: true, timeout: 8000 }
     );
   } else {
-    // Falls keine GPS-Koordinaten hinterlegt sind, direkt speichern
     await sendeAnSupabase(name, typ, bemerkung, false);
   }
 }
 
 async function sendeAnSupabase(name, typ, bemerkung, gpsErfolgreich) {
   try {
-    // Sende Daten (Datum/Uhrzeit generiert Supabase selbst per created_at)
     const { error } = await supabaseClient
-      .from('zeiterfassung')
+      .from('Zeiterfassung')
       .insert([{
         mitarbeiter_name: name,
-        anlage_uid: aktuelleAnlage.uid,
-        anlagen_name: aktuelleAnlage.anlagen_name,
-        meisterei: aktuelleAnlage.meisterei,
+        anlage_uid: aktuelleAnlage.id,
+        anlagen_name: aktuelleAnlage.name,
+        meisterei: aktuelleAnlage.Meisterei,
         typ: typ,
         bemerkung: bemerkung,
         gps_verifiziert: gpsErfolgreich
