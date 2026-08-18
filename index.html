@@ -404,7 +404,7 @@ function updateVorschau() {
   document.getElementById('exp-count').textContent = `${gefiltert.length} Buchung(en) ausgewählt`;
 }
 
-// CSV EXPORT
+// CSV EXPORT MIT KORREKTER ANLAGEN-ID
 function exportCSV() {
   const gefiltert = getGefilterteDaten();
 
@@ -418,7 +418,7 @@ function exportCSV() {
   const rows = gefiltert.map(l => [
     l.created_at ? new Date(l.created_at).toLocaleString('de-DE') : '',
     `"${(l.mitarbeiter_name || '').replace(/"/g, '""')}"`,
-    `"${(l.id || '').replace(/"/g, '""')}"`,
+    `"${(l.anlage_id || l.id || '').replace(/"/g, '""')}"`, // Greift primär auf anlage_id zu
     `"${(l.name || '').replace(/"/g, '""')}"`,
     `"${(l.Meisterei || '').replace(/"/g, '""')}"`,
     `"${(l.typ || '').replace(/"/g, '""')}"`,
@@ -437,7 +437,7 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 }
 
-// PDF EXPORT
+// PDF EXPORT MIT KORREKTER ANLAGEN-ID
 function exportPDF() {
   const gefiltert = getGefilterteDaten();
   const mo = document.getElementById('exp-monat').value || 'Gesamtzeitraum';
@@ -452,7 +452,7 @@ function exportPDF() {
     <tr>
       <td>${l.created_at ? new Date(l.created_at).toLocaleString('de-DE') : '–'}</td>
       <td><strong>${escapeHtml(l.mitarbeiter_name)}</strong></td>
-      <td><code>${escapeHtml(l.id)}</code></td>
+      <td><code>${escapeHtml(l.anlage_id || l.id)}</code></td> <!-- Zeigt anlage_id an -->
       <td>${escapeHtml(l.name)}</td>
       <td>${escapeHtml(l.Meisterei)}</td>
       <td><strong>${escapeHtml(l.typ)}</strong></td>
@@ -512,6 +512,15 @@ function exportPDF() {
     </body>
     </html>
   `;
+
+  const win = window.open('', '_blank');
+  if (win) {
+    win.document.write(html);
+    win.document.close();
+  } else {
+    alert('Pop-up blockiert! Bitte erlaube Pop-ups für diese Seite.');
+  }
+}
 
   const win = window.open('', '_blank');
   if (win) {
