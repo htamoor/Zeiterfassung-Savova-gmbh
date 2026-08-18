@@ -305,11 +305,10 @@ async function stempeln(typ) {
   localStorage.setItem('mitarbeiter_name', name);
 
   try {
-    // Speichert die feste ID der Anlage in 'anlage_id'
     const { error } = await supabaseClient
       .from('Zeiterfassung')
       .insert([{
-        anlage_id: aktuelleAnlage.id, // Bleibt IMMER 63b47f75-2348-4bf6-b7c4-077432534608
+        anlage_id: aktuelleAnlage.id, // Speichert fest die gescannte Anlagen-UID!
         name: aktuelleAnlage.name,
         Meisterei: aktuelleAnlage.Meisterei,
         mitarbeiter_name: name,
@@ -418,7 +417,7 @@ function exportCSV() {
   const rows = gefiltert.map(l => [
     l.created_at ? new Date(l.created_at).toLocaleString('de-DE') : '',
     `"${(l.mitarbeiter_name || '').replace(/"/g, '""')}"`,
-    `"${(l.anlage_id || l.id || '').replace(/"/g, '""')}"`, // Greift primär auf anlage_id zu
+    `"${(l.anlage_id || '–').replace(/"/g, '""')}"`, // Liest rein anlage_id aus
     `"${(l.name || '').replace(/"/g, '""')}"`,
     `"${(l.Meisterei || '').replace(/"/g, '""')}"`,
     `"${(l.typ || '').replace(/"/g, '""')}"`,
@@ -452,7 +451,7 @@ function exportPDF() {
     <tr>
       <td>${l.created_at ? new Date(l.created_at).toLocaleString('de-DE') : '–'}</td>
       <td><strong>${escapeHtml(l.mitarbeiter_name)}</strong></td>
-      <td><code>${escapeHtml(l.anlage_id || l.id)}</code></td> <!-- Zeigt anlage_id an -->
+      <td><code>${escapeHtml(l.anlage_id || '–')}</code></td> <!-- Zeigt ausschließlich anlage_id an -->
       <td>${escapeHtml(l.name)}</td>
       <td>${escapeHtml(l.Meisterei)}</td>
       <td><strong>${escapeHtml(l.typ)}</strong></td>
@@ -521,15 +520,7 @@ function exportPDF() {
     alert('Pop-up blockiert! Bitte erlaube Pop-ups für diese Seite.');
   }
 }
-
-  const win = window.open('', '_blank');
-  if (win) {
-    win.document.write(html);
-    win.document.close();
-  } else {
-    alert('Pop-up blockiert! Bitte erlaube Pop-ups für diese Seite.');
-  }
-}
+  
 </script>
 
 </body>
