@@ -286,6 +286,7 @@ async function ladeAnlageAusSupabase(id) {
 }
 
 // 2. STEMPELN
+// CORRIGIERTE STEMPEL-FUNKTION
 async function stempeln(typ) {
   const nameInput = document.getElementById('inp-name');
   const name = nameInput.value.trim();
@@ -304,12 +305,14 @@ async function stempeln(typ) {
   localStorage.setItem('mitarbeiter_name', name);
 
   try {
+    // WICHTIG: Hier übergeben wir die ID der gescannten Anlage (aktuelleAnlage.id)!
     const { error } = await supabaseClient
       .from('Zeiterfassung')
       .insert([{
-        mitarbeiter_name: name,
+        id: aktuelleAnlage.id, // Speichert die echte Anlagen-ID
         name: aktuelleAnlage.name,
         Meisterei: aktuelleAnlage.Meisterei,
+        mitarbeiter_name: name,
         typ: typ,
         bemerkung: bemerkung
       }]);
