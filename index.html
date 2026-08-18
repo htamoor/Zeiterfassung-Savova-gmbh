@@ -305,11 +305,11 @@ async function stempeln(typ) {
   localStorage.setItem('mitarbeiter_name', name);
 
   try {
-    // WICHTIG: Hier übergeben wir die ID der gescannten Anlage (aktuelleAnlage.id)!
+    // Speichert die feste ID der Anlage in 'anlage_id'
     const { error } = await supabaseClient
       .from('Zeiterfassung')
       .insert([{
-        id: aktuelleAnlage.id, // Speichert die echte Anlagen-ID
+        anlage_id: aktuelleAnlage.id, // Bleibt IMMER 63b47f75-2348-4bf6-b7c4-077432534608
         name: aktuelleAnlage.name,
         Meisterei: aktuelleAnlage.Meisterei,
         mitarbeiter_name: name,
