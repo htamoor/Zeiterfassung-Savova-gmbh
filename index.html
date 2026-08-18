@@ -35,7 +35,6 @@
     .alert-success{background:#dcfce7;color:#166534;border:1px solid #bbf7d0}
     .alert-info{background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd}
 
-    /* Kamera-Ansicht Styles */
     #reader-container {
       display: none;
       margin-bottom: 15px;
@@ -106,7 +105,7 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let aktuelleAnlage = null;
 let html5QrCode = null;
 
-// Beim Öffnen der Seite prüfen, ob bereits ein QR-Code in der URL übergeben wurde
+// Beim Laden prüfen, ob URL-Parameter vorhanden ist
 window.addEventListener('DOMContentLoaded', async () => {
   const gemerkterName = localStorage.getItem('mitarbeiter_name');
   if (gemerkterName) document.getElementById('inp-name').value = gemerkterName;
@@ -124,17 +123,14 @@ window.addEventListener('DOMContentLoaded', async () => {
 // KAMERA SCANNER LOGIK
 function starteKameraScanner() {
   document.getElementById('reader-container').style.display = 'block';
-  
   html5QrCode = new Html5Qrcode("reader");
   
   html5QrCode.start(
-    { facingMode: "environment" }, // Nutzt die Hauptkamera
+    { facingMode: "environment" },
     { fps: 10, qrbox: { width: 220, height: 220 } },
     (decodedText) => {
-      // Erfolgreich gescannt
       stoppeKameraScanner();
       
-      // Falls eine komplette URL gescannt wurde, extract ID
       let id = decodedText;
       if (decodedText.includes('uid=')) {
         try {
@@ -145,9 +141,7 @@ function starteKameraScanner() {
       
       ladeAnlageAusSupabase(id);
     },
-    (errorMessage) => {
-      // Laufender Suchprozess
-    }
+    (errorMessage) => {}
   ).catch(err => {
     showAlert("Kamera-Zugriff fehlgeschlagen: " + err, "err");
     document.getElementById('reader-container').style.display = 'none';
@@ -166,13 +160,12 @@ function stoppeKameraScanner() {
   }
 }
 
-// 1. ANLAGE AUS DER STAMMDATEN-TABELLE LADEN
+// ANLAGE AUS DEINER TABELLE "Zeiterfassung" LADEN
 async function ladeAnlageAusSupabase(id) {
   showAlert("Lade Anlagendaten...", "info");
   const cleanId = String(id).trim();
 
   try {
-    // Greift auf die Stammdaten-Tabelle behälter_QR zu!
     const { data, error } = await supabaseClient
       .from('Zeiterfassung') 
       .select('*')
@@ -191,11 +184,10 @@ async function ladeAnlageAusSupabase(id) {
 
     aktuelleAnlage = data;
     
-    // Anzeigefelder befüllen (Spalten aus deiner behälter_QR Tabelle)
+    // UI BEFÜLLEN (Passend zu deinen Spalten: name & Meisterei)
     document.getElementById('disp-anlage').textContent = data.name;
     document.getElementById('disp-meisterei').textContent = data.Meisterei;
 
-    // Buttons freischalten
     document.getElementById('btn-ein').disabled = false;
     document.getElementById('btn-aus').disabled = false;
 
@@ -206,46 +198,12 @@ async function ladeAnlageAusSupabase(id) {
   }
 }
 
-// 2. STEMPEL-EINTRAG IN DIE PROTOKOLL-TABELLE SCHREIBEN
-async function sendeAnSupabase(name, typ, bemerkung, gpsErfolgreich) {
-  try {
-    // Schreibt das Ergebnis in die Tabelle Zeiterfassung
-    const { error } = await supabaseClient
-      .from('Zeiterfassung')
-      .insert([{
-        mitarbeiter_name: name,
-        anlage_id: aktuelleAnlage.id,
-        anlagen_name: aktuelleAnlage.name,
-        meisterei: aktuelleAnlage.Meisterei,
-        typ: typ,
-        bemerkung: bemerkung
-      }]);
-
-    if (error) throw error;
-
-    showAlert(`Erfolgreich als <strong>${typ}</strong> erfasst!`, "success");
-    document.getElementById('inp-bemerkung').value = '';
-
-  } catch (err) {
-    showAlert("Fehler beim Speichern: " + err.message, "err");
-  }
-}
-
 function showAlert(msg, type) {
   const el = document.getElementById('alert-area');
   el.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
 }
 
-// DISTANZBERECHNUNG (GPS)
-function berechneMeter(lat1, lon1, lat2, lon2) {
-  const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
-  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
-}
-
-// STEMPEL-FUNKTION
+// STEMPELN & IN SUPABASE SPEICHERN
 async function stempeln(typ) {
   const nameInput = document.getElementById('inp-name');
   const name = nameInput.value.trim();
@@ -263,49 +221,16 @@ async function stempeln(typ) {
 
   localStorage.setItem('mitarbeiter_name', name);
 
-  // GPS-Prüfung (Falls Koordinaten in der Tabelle hinterlegt sind)
-  if (aktuelleAnlage.latitude && aktuelleAnlage.longitude) {
-    showAlert("Prüfe Standort-Berechtigung...", "info");
-    
-    if (!navigator.geolocation) {
-      showAlert("GPS wird auf diesem Smartphone nicht unterstützt.", "err");
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const radius = aktuelleAnlage.radius_meter || 200;
-        const distanz = berechneMeter(pos.coords.latitude, pos.coords.longitude, aktuelleAnlage.latitude, aktuelleAnlage.longitude);
-        
-        if (distanz > radius) {
-          showAlert(`Sie befinden sich nicht vor Ort! (${Math.round(distanz)}m entfernt, erlaubt: ${radius}m)`, "err");
-          return;
-        }
-
-        await sendeAnSupabase(name, typ, bemerkung, true);
-      },
-      () => {
-        showAlert("Standortzugriff verweigert. Stempeln ohne GPS nicht erlaubt.", "err");
-      },
-      { enableHighAccuracy: true, timeout: 8000 }
-    );
-  } else {
-    await sendeAnSupabase(name, typ, bemerkung, false);
-  }
-}
-
-async function sendeAnSupabase(name, typ, bemerkung, gpsErfolgreich) {
   try {
+    // Schreibt die Stempel-Daten genau mit deinen Feldbezeichnungen
     const { error } = await supabaseClient
       .from('Zeiterfassung')
       .insert([{
         mitarbeiter_name: name,
-        anlage_uid: aktuelleAnlage.id,
-        anlagen_name: aktuelleAnlage.name,
-        meisterei: aktuelleAnlage.Meisterei,
+        name: aktuelleAnlage.name,
+        Meisterei: aktuelleAnlage.Meisterei,
         typ: typ,
-        bemerkung: bemerkung,
-        gps_verifiziert: gpsErfolgreich
+        bemerkung: bemerkung
       }]);
 
     if (error) throw error;
