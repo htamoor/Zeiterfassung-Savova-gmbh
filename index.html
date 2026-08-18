@@ -160,21 +160,33 @@ function stoppeKameraScanner() {
   }
 }
 
-// ANLAGE AUS DEINER TABELLE "Zeiterfassung" LADEN
 async function ladeAnlageAusSupabase(id) {
   showAlert("Lade Anlagendaten...", "info");
-  const cleanId = String(id).trim();
+
+  // Bereinigt alle unsichtbaren Zeichen, Zeilenumbrüche & Leerzeichen
+  const cleanId = String(id).replace(/[\r\n\t]/g, '').trim();
+
+  console.log("Gesuchte ID (bereinigt):", cleanId);
 
   try {
-    const { data, error } = await supabaseClient
-      .from('Zeiterfassung') 
+    const { data, error, status } = await supabaseClient
+      .from('Zeiterfassung')
       .select('*')
       .eq('id', cleanId)
-      .single();
+      .maybeSingle(); // Verhindert Absturz bei Abfrage-Konflikten
 
-    if (error || !data) {
-      console.error("Supabase Error:", error);
-      showAlert(`Ungültige oder unbekannte Anlagen-ID (${cleanId}).`, "err");
+    // Konsolen-Debugging
+    console.log("Supabase Antowrt Status:", status);
+    console.log("Empfangene Daten:", data);
+    console.log("Supabase Fehlerobjekt:", error);
+
+    if (error) {
+      showAlert(`Supabase-Datenbank-Fehler: ${error.message} (Code: ${error.code})`, "err");
+      return;
+    }
+
+    if (!data) {
+      showAlert(`ID "${cleanId}" wurde in der Datenbank nicht gefunden. (Mögliche Ursache: RLS-Sperre oder falscher Tabellenname)`, "err");
       document.getElementById('disp-anlage').textContent = "Unbekannte Anlage";
       document.getElementById('disp-meisterei').textContent = "–";
       document.getElementById('btn-ein').disabled = true;
@@ -182,9 +194,8 @@ async function ladeAnlageAusSupabase(id) {
       return;
     }
 
+    // Erfolgsfall
     aktuelleAnlage = data;
-    
-    // UI BEFÜLLEN (Passend zu deinen Spalten: name & Meisterei)
     document.getElementById('disp-anlage').textContent = data.name;
     document.getElementById('disp-meisterei').textContent = data.Meisterei;
 
@@ -194,7 +205,7 @@ async function ladeAnlageAusSupabase(id) {
     showAlert(`Anlage "${data.name}" erkannt!`, "success");
 
   } catch (e) {
-    showAlert("Fehler beim Abrufen der Anlagendaten: " + e.message, "err");
+    showAlert("Unerwarteter Fehler: " + e.message, "err");
   }
 }
 
